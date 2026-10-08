@@ -1,0 +1,8 @@
+DirectoryIndex index.html
+AddDefaultCharset UTF-8
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule ^storage/ - [F,L]
+</IfModule>

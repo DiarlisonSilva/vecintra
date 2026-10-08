@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Pedidos — VECINTRA</title>
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Space+Grotesk:wght@600&display=swap" rel="stylesheet">
+  <style>
+    :root { --navy:#0e2a4a; --gold:#c8a146; --line:#e4e9f1; --muted:#64748b; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Outfit,sans-serif; background:#f5f7fb; color:#142033; }
+    header { background:var(--navy); color:white; padding:22px 6vw; display:flex; justify-content:space-between; align-items:center; }
+    header a { color:#e4c56a; text-decoration:none; font-family:"Space Grotesk",sans-serif; letter-spacing:.08em; text-transform:uppercase; font-size:.75rem; }
+    main { width:min(1100px, calc(100% - 32px)); margin:28px auto 60px; }
+    form, .card { background:white; border:1px solid var(--line); border-radius:18px; padding:22px; }
+    h1 { margin:0 0 8px; letter-spacing:-.03em; }
+    label { display:grid; gap:6px; font-size:.85rem; }
+    input, select, button { font:inherit; }
+    input { min-height:46px; border:1px solid #d5deea; border-radius:10px; padding:0 12px; }
+    button, .linkish { border:0; background:var(--navy); color:white; border-radius:999px; min-height:40px; padding:0 14px; cursor:pointer; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .lead { border-bottom:1px solid var(--line); padding:16px 0; }
+    .lead:last-child { border-bottom:0; }
+    .meta { color:var(--muted); font-size:.9rem; }
+    .tag { font-family:"Space Grotesk",sans-serif; font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; background:#fbf6ea; color:#8d6b1f; border-radius:999px; padding:4px 8px; }
+    .error { color:#9f1239; }
+    .empty { color:var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>VECINTRA · Pedidos</strong>
+    <a href="../index.html">Voltar ao site</a>
+  </header>
+  <main>
+    <section id="login" class="card">
+      <h1>Painel de solicitações</h1>
+      <p>Entre com a senha definida em <code>api/config.php</code>.</p>
+      <form id="gate">
+        <label>Senha<input type="password" name="senha" required autocomplete="current-password"></label>
+        <p class="error" id="login-error"></p>
+        <button type="submit">Entrar</button>
+      </form>
+    </section>
+    <section id="inbox" hidden>
+      <div class="row" style="margin-bottom:14px">
+        <h1 style="margin:0">Solicitações</h1>
+        <button type="button" id="refresh">Atualizar</button>
+        <button type="button" id="leave" style="background:#fff;color:var(--navy);border:1px solid var(--line)">Sair</button>
+      </div>
+      <div class="card" id="list"></div>
+    </section>
+  </main>
+  <script>
+    const KEY = "vecintra_admin";
+    const login = document.querySelector("#login");
+    const inbox = document.querySelector("#inbox");
+    const list = document.querySelector("#list");
+
+    async function api(path, options = {}) {
+      const headers = { "X-Admin-Key": sessionStorage.getItem(KEY) || "", ...(options.headers || {}) };
+      const response = await fetch(path, { ...options, headers });
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        sessionStorage.removeItem(KEY);
+        showLogin("Senha incorreta.");
+        throw new Error("401");
+      }
+      if (!response.ok) throw new Error(body.error || "Falha ao carregar.");
+      return body;
+    }
+
+    function showLogin(message) {
+      login.hidden = false;
+      inbox.hidden = true;
+      document.querySelector("#login-error").textContent = message || "";
+    }
+
+    function statusLabel(status) {
+      return { novo: "Novo", em_contato: "Em contato", concluido: "Concluído" }[status] || status;
+    }
+
+    function render(leads) {
+      list.replaceChildren();
+      if (!leads.length) {
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = "Nenhuma solicitação ainda.";
+        list.append(p);
+        return;
+      }
+      leads.forEach((lead) => {
+        const article = document.createElement("article");
+        article.className = "lead";
+        const title = document.createElement("strong");
+        title.textContent = lead.nome || "Sem nome";
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = statusLabel(lead.status);
+        const head = document.createElement("div");
+        head.className = "row";
+        head.append(title, tag);
+        const meta = document.createElement("p");
+        meta.className = "meta";
+        meta.textContent = `${lead.created_at || ""} · ${lead.telefone || ""} · ${lead.email || ""} · ${lead.imovel || ""} · ${lead.servico || ""}`;
+        const message = document.createElement("p");
+        message.textContent = lead.mensagem || "Sem mensagem adicional.";
+        const actions = document.createElement("div");
+        actions.className = "row";
+        const wa = document.createElement("a");
+        wa.className = "linkish";
+        wa.style.textDecoration = "none";
+        wa.target = "_blank";
+        wa.rel = "noopener";
+        const digits = String(lead.telefone || "").replace(/\D/g, "");
+        const phone = digits.startsWith("55") ? digits : `55${digits}`;
+        wa.href = `https://wa.me/${phone}`;
+        wa.textContent = "WhatsApp";
+        ["novo", "em_contato", "concluido"].forEach((status) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = statusLabel(status);
+          button.addEventListener("click", async () => {
+            await api("../api/leads.php", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: lead.id, status }),
+            });
+            load();
+          });
+          actions.append(button);
+        });
+        actions.prepend(wa);
+        article.append(head, meta, message, actions);
+        list.append(article);
+      });
+    }
+
+    async function load() {
+      const body = await api("../api/leads.php");
+      login.hidden = true;
+      inbox.hidden = false;
+      render(body.leads || []);
+    }
+
+    document.querySelector("#gate").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      sessionStorage.setItem(KEY, new FormData(event.target).get("senha"));
+      try { await load(); } catch (error) { if (error.message !== "401") showLogin(error.message); }
+    });
+    document.querySelector("#refresh").addEventListener("click", () => load().catch((error) => alert(error.message)));
+    document.querySelector("#leave").addEventListener("click", () => {
+      sessionStorage.removeItem(KEY);
+      showLogin("");
+    });
+    if (sessionStorage.getItem(KEY)) load().catch(() => showLogin(""));
+  </script>
+</body>
+</html>
